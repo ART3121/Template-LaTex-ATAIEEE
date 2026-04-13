@@ -3,8 +3,7 @@ const SWIFTLATEX_SCRIPTS = [
 ];
 
 let runtimePromise;
-let enginePromise;
-let formatPromise;
+let formatBytesPromise;
 const societyBundleCache = new Map();
 
 function splitLines(value) {
@@ -173,20 +172,11 @@ async function ensureRuntimeLoaded() {
   return runtimePromise;
 }
 
-async function ensureEnginesLoaded() {
-  if (!enginePromise) {
-    enginePromise = (async () => {
-      await ensureRuntimeLoaded();
-      const pdftex = new window.PdfTeXEngine();
-      await pdftex.loadEngine();
-      return pdftex;
-    })().catch((error) => {
-      enginePromise = undefined;
-      throw error;
-    });
-  }
-
-  return enginePromise;
+async function createPdftexEngine() {
+  await ensureRuntimeLoaded();
+  const pdftex = new window.PdfTeXEngine();
+  await pdftex.loadEngine();
+  return pdftex;
 }
 
 function normalizarMensagemSwiftlatex(error, fallback) {
@@ -253,26 +243,39 @@ async function fetchSocietyBundle(sociedade) {
 }
 
 export async function preloadSwiftLatexForSociety(sociedade) {
-  const [pdftex] = await Promise.all([ensureEnginesLoaded(), fetchSocietyBundle(sociedade)]);
-  await ensurePdftexFormat(pdftex);
+  await Promise.all([fetchSocietyBundle(sociedade), ensurePdftexFormatBytes()]);
 }
 
-async function ensurePdftexFormat(pdftex) {
-  if (!formatPromise) {
-    formatPromise = (async () => {
-      const formatResult = await pdftex.compileFormat();
-      if (formatResult.status !== 0 || !formatResult.pdf) {
-        throw new Error(formatResult.log || "Falha ao gerar o formato local do PdfTeX.");
-      }
+async function ensurePdftexFormatBytes() {
+  if (!formatBytesPromise) {
+    formatBytesPromise = (async () => {
+      const pdftex = await createPdftexEngine();
+      try {
+        const formatResult = await pdftex.compileFormat();
+        if (formatResult.status !== 0 || !formatResult.pdf) {
+          throw new Error(formatResult.log || "Falha ao gerar o formato local do PdfTeX.");
+        }
 
-      pdftex.writeMemFSFile("swiftlatexpdftex.fmt", formatResult.pdf);
+        return new Uint8Array(formatResult.pdf);
+      } finally {
+        pdftex.closeWorker();
+      }
     })().catch((error) => {
-      formatPromise = undefined;
+      formatBytesPromise = undefined;
       throw new Error(normalizarMensagemSwiftlatex(error, "Falha ao preparar o formato do PdfTeX."));
     });
   }
 
-  return formatPromise;
+  return formatBytesPromise;
+}
+
+async function createReadyPdftexEngine() {
+  const [pdftex, formatBytes] = await Promise.all([
+    createPdftexEngine(),
+    ensurePdftexFormatBytes(),
+  ]);
+  pdftex.writeMemFSFile("swiftlatexpdftex.fmt", formatBytes);
+  return pdftex;
 }
 
 async function writeProjectFiles(engine, files) {
@@ -319,9 +322,8 @@ async function prepararArquivosDeAnexo(anexos, outputName) {
 export async function compileAtaPdfInBrowser({ form, outputName }) {
   const [{ documentclass, files: societyFiles }, pdftex] = await Promise.all([
     fetchSocietyBundle(form.sociedade),
-    ensureEnginesLoaded(),
+    createReadyPdftexEngine(),
   ]);
-  await ensurePdftexFormat(pdftex);
 
   const dados = {
     autor: form.autor,
@@ -345,17 +347,21 @@ export async function compileAtaPdfInBrowser({ form, outputName }) {
     },
   ];
 
-  await writeProjectFiles(pdftex, projectFiles);
-  pdftex.setEngineMainFile("main.tex");
+  try {
+    await writeProjectFiles(pdftex, projectFiles);
+    pdftex.setEngineMainFile("main.tex");
 
-  const pdfResult = await pdftex.compileLaTeX();
-  if (pdfResult.status !== 0 || !pdfResult.pdf) {
-    throw new Error(pdfResult.log || "Falha ao compilar a ata com PdfTeX.");
+    const pdfResult = await pdftex.compileLaTeX();
+    if (pdfResult.status !== 0 || !pdfResult.pdf) {
+      throw new Error(pdfResult.log || "Falha ao compilar a ata com PdfTeX.");
+    }
+
+    return {
+      fileName: `${normalizarNomeSaida(outputName)}.pdf`,
+      log: pdfResult.log || "",
+      pdf: new Blob([pdfResult.pdf], { type: "application/pdf" }),
+    };
+  } finally {
+    pdftex.closeWorker();
   }
-
-  return {
-    fileName: `${normalizarNomeSaida(outputName)}.pdf`,
-    log: pdfResult.log || "",
-    pdf: new Blob([pdfResult.pdf], { type: "application/pdf" }),
-  };
 }
