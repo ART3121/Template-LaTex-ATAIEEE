@@ -6,6 +6,7 @@ let runtimePromise;
 let formatBytesPromise;
 let pdftexMapBytesPromise;
 const societyBundleCache = new Map();
+const SWIFTLATEX_CACHE_BUSTER = Date.now().toString(36);
 
 function splitLines(value) {
   return String(value || "")
@@ -246,7 +247,7 @@ async function fetchSocietyBundle(sociedade) {
 async function ensurePdftexMapBytes() {
   if (!pdftexMapBytesPromise) {
     pdftexMapBytesPromise = (async () => {
-      const response = await fetch("/api/swiftlatex/texlive/pdftex/11/pdftex.map", {
+      const response = await fetch(`/api/swiftlatex/texlive/pdftex/11/pdftex.map?v=${SWIFTLATEX_CACHE_BUSTER}`, {
         cache: "no-store",
       });
 
