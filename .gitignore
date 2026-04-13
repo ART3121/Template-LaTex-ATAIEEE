@@ -2,6 +2,9 @@ __pycache__/
 **/__pycache__/
 *.pyc
 .venv/
+node_modules/
+.next/
+out/
 web_atas/frontend/node_modules/
 web_atas/frontend/dist/
 web_atas/frontend/.vite/
@@ -17,3 +20,9 @@ classes/*/ata_*.fdb_latexmk
 classes/*/ata_*.fls
 classes/*/ata_*.log
 classes/*/ata_*.synctex.gz
+texlive/cache/
+.tmp_*/
+chrome-dom*.txt
+next-swiftlatex-debug*.log
+swiftlatex-debug.png
+swiftlatex-release.zip

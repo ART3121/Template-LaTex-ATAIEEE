@@ -210,11 +210,25 @@ def escapar_latex(texto: str) -> str:
     return r" \\ ".join(linhas_escapadas)
 
 
-def resolver_arquivo(caminho: str, base_dir: Path) -> Path:
+def resolver_arquivo(
+    caminho: str,
+    base_dir: Path,
+    *,
+    allow_outside_base: bool = True,
+) -> Path:
+    base_dir_resolvida = base_dir.resolve()
     arquivo = Path(caminho).expanduser()
-    if arquivo.is_absolute():
-        return arquivo
-    return (base_dir / arquivo).resolve()
+    origem = arquivo.resolve() if arquivo.is_absolute() else (base_dir_resolvida / arquivo).resolve()
+
+    if allow_outside_base:
+        return origem
+
+    try:
+        origem.relative_to(base_dir_resolvida)
+    except ValueError as exc:
+        raise ValueError("O anexo precisa estar dentro do diretório permitido.") from exc
+
+    return origem
 
 
 def preparar_anexos(
@@ -222,6 +236,8 @@ def preparar_anexos(
     pasta_sociedade: Path,
     base_dir: Path,
     nome_saida: str,
+    *,
+    allow_outside_base: bool = True,
 ) -> list[tuple[str, str]]:
     pasta_anexos = pasta_sociedade / "anexos_gerados"
     pasta_anexos.mkdir(exist_ok=True)
@@ -237,7 +253,11 @@ def preparar_anexos(
                 "Cada anexo precisa ter legenda e arquivo selecionado."
             )
 
-        origem = resolver_arquivo(arquivo, base_dir)
+        origem = resolver_arquivo(
+            arquivo,
+            base_dir,
+            allow_outside_base=allow_outside_base,
+        )
         if not origem.exists():
             raise FileNotFoundError(f"Anexo não encontrado: {origem}")
 
@@ -374,6 +394,7 @@ def compilar_pdf(caminho_tex: Path) -> Path:
 def gerar_ata(
     dados: AtaData,
     *,
+    allow_outside_base: bool = True,
     compilar: bool = False,
     base_dir: Path | None = None,
     output_dir: Path | None = None,
@@ -391,6 +412,7 @@ def gerar_ata(
         pasta_sociedade,
         base_dir_resolvida,
         nome_saida,
+        allow_outside_base=allow_outside_base,
     )
     conteudo_tex = renderizar_tex(dados_limpos, anexos_preparados)
 
@@ -429,6 +451,7 @@ def main() -> int:
         dados = carregar_dados_json(args.dados)
         saidas = gerar_ata(
             dados,
+            allow_outside_base=True,
             compilar=args.pdf,
             base_dir=args.dados.parent.resolve(),
         )

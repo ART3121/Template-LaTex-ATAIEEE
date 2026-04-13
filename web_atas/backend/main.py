@@ -4,6 +4,7 @@ import json
 import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -128,7 +129,7 @@ def montar_dados(payload: AtaPayload, upload_map: dict[str, UploadFile], uploads
             )
 
         nome_arquivo = normalizar_nome_arquivo(upload.filename)
-        destino = uploads_dir / f"{upload_key}-{nome_arquivo}"
+        destino = uploads_dir / f"{uuid4().hex}-{nome_arquivo}"
         with destino.open("wb") as arquivo_destino:
             shutil.copyfileobj(upload.file, arquivo_destino)
 
@@ -231,6 +232,7 @@ async def gerar_pdf(request: Request) -> Response:
             saidas = gerar_ata(
                 dados,
                 compilar=True,
+                allow_outside_base=False,
                 base_dir=uploads_dir,
                 output_dir=workspace,
             )
