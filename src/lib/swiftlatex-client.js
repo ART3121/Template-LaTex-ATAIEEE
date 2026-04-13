@@ -4,6 +4,7 @@ const SWIFTLATEX_SCRIPTS = [
 
 let runtimePromise;
 let formatBytesPromise;
+let pdftexMapBytesPromise;
 const societyBundleCache = new Map();
 
 function splitLines(value) {
@@ -242,8 +243,33 @@ async function fetchSocietyBundle(sociedade) {
   return societyBundleCache.get(sociedade);
 }
 
+async function ensurePdftexMapBytes() {
+  if (!pdftexMapBytesPromise) {
+    pdftexMapBytesPromise = (async () => {
+      const response = await fetch("/api/swiftlatex/texlive/pdftex/11/pdftex.map", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Nao foi possivel carregar pdftex.map (${response.status}).`);
+      }
+
+      return new Uint8Array(await response.arrayBuffer());
+    })().catch((error) => {
+      pdftexMapBytesPromise = undefined;
+      throw new Error(normalizarMensagemSwiftlatex(error, "Falha ao carregar pdftex.map."));
+    });
+  }
+
+  return pdftexMapBytesPromise;
+}
+
 export async function preloadSwiftLatexForSociety(sociedade) {
-  await Promise.all([fetchSocietyBundle(sociedade), ensurePdftexFormatBytes()]);
+  await Promise.all([
+    fetchSocietyBundle(sociedade),
+    ensurePdftexFormatBytes(),
+    ensurePdftexMapBytes(),
+  ]);
 }
 
 async function ensurePdftexFormatBytes() {
@@ -270,11 +296,13 @@ async function ensurePdftexFormatBytes() {
 }
 
 async function createReadyPdftexEngine() {
-  const [pdftex, formatBytes] = await Promise.all([
+  const [pdftex, formatBytes, pdftexMapBytes] = await Promise.all([
     createPdftexEngine(),
     ensurePdftexFormatBytes(),
+    ensurePdftexMapBytes(),
   ]);
   pdftex.writeMemFSFile("swiftlatexpdftex.fmt", formatBytes);
+  pdftex.writeMemFSFile("pdftex.map", pdftexMapBytes);
   return pdftex;
 }
 

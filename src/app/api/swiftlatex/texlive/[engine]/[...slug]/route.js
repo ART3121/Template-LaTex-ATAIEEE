@@ -146,5 +146,10 @@ export async function GET(_request, context) {
   if (localResponse) {
     return localResponse;
   }
-  return new Response("File not found", { status: 404 });
+  return new Response("File not found", {
+    headers: {
+      "cache-control": "no-store",
+    },
+    status: 404,
+  });
 }
